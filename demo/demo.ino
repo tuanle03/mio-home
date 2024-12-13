@@ -7,8 +7,8 @@
 #include <WiFiUdp.h>
 
 // Wi-Fi credentials
-const char* ssid = "PongZua";
-const char* password = "ngoagiatienluong";
+const char* ssid = "Cnmeow";
+const char* password = "iluvyou";
 
 // Web server on port 80
 WebServer server(80);
@@ -197,7 +197,7 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
     <script>
         async function fetchWeather() {
             try {
-                const response = await fetch('https://api.weatherstack.com/current?access_key=1254056e378bf77b63e0dca7b4ceb8c3&query=10.870725,106.802152');
+                const response = await fetch('https://api.weatherstack.com/current?access_key=**********&query=10.870725,106.802152');
                 const data = await response.json();
                 document.getElementById('outdoor-temperature').innerText = data.current.temperature + '°C';
                 document.getElementById('outdoor-humidity').innerText = data.current.humidity + '%';
