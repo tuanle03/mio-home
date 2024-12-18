@@ -1,1 +1,1 @@
-# mio-home
+# Mio Smart Home
