@@ -16,8 +16,10 @@ DHT dht(12, DHT11);
 
 // Sensor data
 unsigned long lastDHTReadTime = 0;
-float currentTemperature = 0;
-float currentHumidity = 0;
+float lastTemperature = NAN;
+float lastHumidity = NAN;
+float currentTemperature = NAN;
+float currentHumidity = NAN;
 
 // HTML page
 const char HTML_PAGE[] PROGMEM = R"rawliteral(
@@ -36,18 +38,22 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
         .dht-labels { font-size: 1.5rem; vertical-align: middle; }
     </style>
     <script>
-        async function updateData() {
+        async function pollData() {
             try {
                 const response = await fetch('/sensor-data');
-                const data = await response.json();
-                document.getElementById('temperature').innerText = data.temperature.toFixed(2);
-                document.getElementById('humidity').innerText = data.humidity.toFixed(2);
+                if (response.status === 200) {
+                    const data = await response.json();
+                    document.getElementById('temperature').innerText = data.temperature.toFixed(2);
+                    document.getElementById('humidity').innerText = data.humidity.toFixed(2);
+                }
             } catch (error) {
                 console.error('Error fetching sensor data:', error);
+            } finally {
+                // continue polling data after receiving response
+                pollData();
             }
         }
-        setInterval(updateData, 500); // Cập nhật mỗi 500ms
-        window.onload = updateData;
+        window.onload = pollData;
     </script>
 </head>
 <body>
@@ -69,17 +75,29 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-// Increase the frequency of reading data from the sensor
-void updateDHTData() {
+// Update DHT data and check for changes
+bool updateDHTData() {
     unsigned long currentTime = millis();
-    if (currentTime - lastDHTReadTime >= 500) { // Cập nhật mỗi 500ms
+    if (currentTime - lastDHTReadTime >= 2000) { // update every 2 seconds
         lastDHTReadTime = currentTime;
-        currentTemperature = dht.readTemperature();
-        currentHumidity = dht.readHumidity();
-        if (isnan(currentTemperature) || isnan(currentHumidity)) {
+        float newTemperature = dht.readTemperature();
+        float newHumidity = dht.readHumidity();
+
+        if (isnan(newTemperature) || isnan(newHumidity)) {
             Serial.println("Failed to read from DHT sensor!");
+            return false;
+        }
+
+        // check if the new data is different from the current data
+        if (newTemperature != currentTemperature || newHumidity != currentHumidity) {
+            lastTemperature = currentTemperature;
+            lastHumidity = currentHumidity;
+            currentTemperature = newTemperature;
+            currentHumidity = newHumidity;
+            return true; // have changes
         }
     }
+    return false; // no changes
 }
 
 // Serve the main HTML page
@@ -87,11 +105,25 @@ void handleRoot() {
     server.send(200, "text/html; charset=utf-8", HTML_PAGE);
 }
 
-// Serve JSON data for temperature and humidity
+// Long polling logic
 void handleSensorData() {
-    char json[50];
-    snprintf(json, sizeof(json), "{\"temperature\":%.2f,\"humidity\":%.2f}", currentTemperature, currentHumidity);
-    server.send(200, "application/json", json);
+    unsigned long startTime = millis();
+    while (true) {
+        if (updateDHTData()) { // have changes
+            char json[50];
+            snprintf(json, sizeof(json), "{\"temperature\":%.2f,\"humidity\":%.2f}", currentTemperature, currentHumidity);
+            server.send(200, "application/json", json);
+            return;
+        }
+
+        // max waiting time is 30 seconds
+        if (millis() - startTime >= 30000) {
+            server.send(204, "application/json", ""); // no content
+            return;
+        }
+
+        delay(100); // loop delay to avoid busy-waiting
+    }
 }
 
 void setup() {
@@ -126,5 +158,4 @@ void setup() {
 
 void loop() {
     server.handleClient();
-    updateDHTData();
 }
